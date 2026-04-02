@@ -1,0 +1,43 @@
+# =============================================================================
+# Example: A team creating an AKS cluster
+# =============================================================================
+# This is ALL a team needs in their repo. Just import the template and set vars.
+# The platform workflow handles init, plan, apply, destroy automatically.
+# =============================================================================
+
+name: "Deploy AKS Cluster"
+
+on:
+  push:
+    branches: [main]
+    paths: ["infra/**"]
+  pull_request:
+    branches: [main]
+    paths: ["infra/**"]
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: "Destroy infrastructure?"
+        type: boolean
+        default: false
+
+jobs:
+  terraform-dev:
+    uses: <your-org>/terraform-platform/.github/workflows/terraform.yml@main
+    with:
+      working_directory: ./infra
+      environment: dev
+      backend_key: "myteam/aks-cluster/dev/terraform.tfstate"
+      destroy: ${{ github.event.inputs.destroy == 'true' }}
+    secrets: inherit
+
+  terraform-prod:
+    needs: [terraform-dev]
+    if: github.ref == 'refs/heads/main'
+    uses: <your-org>/terraform-platform/.github/workflows/terraform.yml@main
+    with:
+      working_directory: ./infra
+      environment: prod
+      backend_key: "myteam/aks-cluster/prod/terraform.tfstate"
+      destroy: ${{ github.event.inputs.destroy == 'true' }}
+    secrets: inherit

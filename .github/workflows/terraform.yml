@@ -1,0 +1,307 @@
+# =============================================================================
+# Reusable Terraform Workflow for Azure
+# =============================================================================
+# Teams import this workflow and only need to set variables.
+# It handles: init → plan → apply (manual) → destroy (manual)
+# State is stored in Azure Blob Storage with native blob lease locking.
+#
+# Usage in consumer repo:
+#   jobs:
+#     terraform:
+#       uses: <org>/terraform-platform/.github/workflows/terraform.yml@main
+#       with:
+#         working_directory: ./infra
+#         environment: dev
+#       secrets: inherit
+# =============================================================================
+
+name: Terraform
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Path to Terraform root module"
+        type: string
+        default: "."
+      environment:
+        description: "Deployment environment (dev, staging, prod)"
+        type: string
+        required: true
+      terraform_version:
+        description: "Terraform version to use"
+        type: string
+        default: "1.9.0"
+      backend_resource_group:
+        description: "Azure Resource Group for state storage"
+        type: string
+        default: "rg-terraform-state"
+      backend_storage_account:
+        description: "Azure Storage Account for state"
+        type: string
+        default: "stterraformstate"
+      backend_container:
+        description: "Blob container name for state files"
+        type: string
+        default: "tfstate"
+      backend_key:
+        description: "State file key (e.g. myservice/terraform.tfstate)"
+        type: string
+        required: true
+      destroy:
+        description: "Set to true to run destroy instead of apply"
+        type: boolean
+        default: false
+      additional_args:
+        description: "Additional Terraform arguments"
+        type: string
+        default: ""
+    secrets:
+      ARM_CLIENT_ID:
+        description: "Azure Service Principal Client ID (or OIDC app registration)"
+        required: true
+      ARM_TENANT_ID:
+        description: "Azure AD Tenant ID"
+        required: true
+      ARM_SUBSCRIPTION_ID:
+        description: "Azure Subscription ID"
+        required: true
+      ARM_CLIENT_SECRET:
+        description: "Azure SP Client Secret (not needed if using OIDC)"
+        required: false
+      TF_VARS:
+        description: "Additional Terraform variables as JSON"
+        required: false
+
+permissions:
+  id-token: write   # Required for OIDC authentication
+  contents: read
+  pull-requests: write  # To post plan output on PRs
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_USE_OIDC: ${{ secrets.ARM_CLIENT_SECRET == '' && 'true' || 'false' }}
+  TF_INPUT: "false"
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  # ===========================================================================
+  # STAGE 1: Terraform Format Check
+  # ===========================================================================
+  format:
+    name: "Format Check"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Terraform Format Check
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform fmt -check -recursive -diff
+
+  # ===========================================================================
+  # STAGE 2: Terraform Validate
+  # ===========================================================================
+  validate:
+    name: "Validate"
+    runs-on: ubuntu-latest
+    needs: [format]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Terraform Init (validation only)
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform validate
+
+  # ===========================================================================
+  # STAGE 3: Terraform Plan
+  # ===========================================================================
+  plan:
+    name: "Plan (${{ inputs.environment }})"
+    runs-on: ubuntu-latest
+    needs: [validate]
+    environment: "${{ inputs.environment }}-plan"
+    outputs:
+      plan_exit_code: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: true
+
+      - name: Azure Login (OIDC)
+        if: env.ARM_USE_OIDC == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
+            -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
+            -backend-config="container_name=${{ inputs.backend_container }}" \
+            -backend-config="key=${{ inputs.backend_key }}" \
+            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          set +e
+          terraform plan \
+            -detailed-exitcode \
+            -out=tfplan \
+            ${{ inputs.additional_args }}
+          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Upload Plan Artifact
+        if: steps.plan.outputs.exitcode == '2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: ${{ inputs.working_directory }}/tfplan
+          retention-days: 5
+
+      - name: Post Plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `#### Terraform Plan - \`${{ inputs.environment }}\`
+            **Exit code:** \`${{ steps.plan.outputs.exitcode }}\`
+            - \`0\` = No changes
+            - \`1\` = Error
+            - \`2\` = Changes detected
+
+            *Triggered by @${{ github.actor }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      - name: Plan Status
+        if: steps.plan.outputs.exitcode == '1'
+        run: exit 1
+
+  # ===========================================================================
+  # STAGE 4: Terraform Apply (Manual Approval via GitHub Environment)
+  # ===========================================================================
+  apply:
+    name: "Apply (${{ inputs.environment }})"
+    runs-on: ubuntu-latest
+    needs: [plan]
+    if: |
+      inputs.destroy == false &&
+      needs.plan.outputs.plan_exit_code == '2' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    environment: ${{ inputs.environment }}  # <-- This triggers manual approval
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Azure Login (OIDC)
+        if: env.ARM_USE_OIDC == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
+            -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
+            -backend-config="container_name=${{ inputs.backend_container }}" \
+            -backend-config="key=${{ inputs.backend_key }}" \
+            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: ${{ inputs.working_directory }}
+
+      - name: Terraform Apply
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform apply -auto-approve tfplan
+
+  # ===========================================================================
+  # STAGE 5: Terraform Destroy (Manual Approval via GitHub Environment)
+  # ===========================================================================
+  destroy:
+    name: "Destroy (${{ inputs.environment }})"
+    runs-on: ubuntu-latest
+    needs: [plan]
+    if: |
+      inputs.destroy == true &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    environment: "${{ inputs.environment }}-destroy"  # <-- Separate approval for destroy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Azure Login (OIDC)
+        if: env.ARM_USE_OIDC == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
+            -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
+            -backend-config="container_name=${{ inputs.backend_container }}" \
+            -backend-config="key=${{ inputs.backend_key }}" \
+            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+
+      - name: Terraform Destroy
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          terraform destroy -auto-approve \
+            ${{ inputs.additional_args }}

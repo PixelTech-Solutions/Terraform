@@ -22,22 +22,60 @@ on:
         default: false
 
 jobs:
-  terraform-dev:
-    uses: <your-org>/terraform-platform/.github/workflows/terraform.yml@main
+  dev:
+    uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
     with:
       working_directory: ./infra
       environment: dev
-      backend_key: "myteam/aks-cluster/dev/terraform.tfstate"
+      backend_key: "aks-cluster/dev/terraform.tfstate"
+      additional_args: "-var-file=environments/dev.tfvars"
       destroy: ${{ github.event.inputs.destroy == 'true' }}
     secrets: inherit
 
-  terraform-prod:
-    needs: [terraform-dev]
+  qa:
+    needs: [dev]
     if: github.ref == 'refs/heads/main'
-    uses: <your-org>/terraform-platform/.github/workflows/terraform.yml@main
+    uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
+    with:
+      working_directory: ./infra
+      environment: qa
+      backend_key: "aks-cluster/qa/terraform.tfstate"
+      additional_args: "-var-file=environments/qa.tfvars"
+      destroy: ${{ github.event.inputs.destroy == 'true' }}
+    secrets: inherit
+
+  uat:
+    needs: [qa]
+    if: github.ref == 'refs/heads/main'
+    uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
+    with:
+      working_directory: ./infra
+      environment: uat
+      backend_key: "aks-cluster/uat/terraform.tfstate"
+      additional_args: "-var-file=environments/uat.tfvars"
+      destroy: ${{ github.event.inputs.destroy == 'true' }}
+    secrets: inherit
+
+  prod:
+    needs: [uat]
+    if: github.ref == 'refs/heads/main'
+    uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
     with:
       working_directory: ./infra
       environment: prod
-      backend_key: "myteam/aks-cluster/prod/terraform.tfstate"
+      backend_key: "aks-cluster/prod/terraform.tfstate"
+      additional_args: "-var-file=environments/prod.tfvars"
+      destroy: ${{ github.event.inputs.destroy == 'true' }}
+    secrets: inherit
+
+  demo:
+    needs: [dev]
+    if: github.ref == 'refs/heads/main'
+    uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
+    with:
+      working_directory: ./infra
+      environment: demo
+      backend_key: "aks-cluster/demo/terraform.tfstate"
+      additional_args: "-var-file=environments/demo.tfvars"
       destroy: ${{ github.event.inputs.destroy == 'true' }}
     secrets: inherit

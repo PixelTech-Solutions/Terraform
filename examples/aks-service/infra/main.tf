@@ -10,6 +10,3 @@ resource "azurerm_resource_group" "this" {
 
 # Example: teams just add their Azure resources here
 # The pipeline handles everything else
-output "resource_group_id" {
-  value = azurerm_resource_group.this.id
-}

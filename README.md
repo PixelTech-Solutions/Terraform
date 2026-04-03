@@ -41,8 +41,7 @@ A reusable Terraform CI/CD platform for **GitHub Actions + Azure**. Teams import
 - **Separate pipeline per environment** — deploy and manage each environment independently
 - **Azure Blob Storage backend** — state + locking in a single resource (blob leases)
 - **Manual approval gates** — Apply and Destroy require reviewer approval via GitHub Environments
-- **Auto-created environments** — the Plan job creates `dev` and `dev-destroy` environments automatically
-- **Safe by default** — Apply is skipped if no reviewers are configured yet
+- **Safe by default** — Apply and Destroy are skipped if no reviewers are configured
 - **PR comments** — plan output posted as a PR comment for review
 
 ## Quick Start
@@ -126,10 +125,9 @@ provider "azurerm" {
 ### 3. Push and Set Up Reviewers
 
 1. Push to `main` — the pipeline runs Format → Validate → Plan
-2. Environments `dev` and `dev-destroy` are auto-created
-3. Go to **Settings → Environments → `dev`** → add Required reviewers
-4. Go to **Settings → Environments → `dev-destroy`** → add Required reviewers
-5. Next push — Apply pauses with a "Review deployments" button
+2. Go to **Settings → Environments** → create `dev` and `dev-destroy`
+3. Add **Required reviewers** to both environments
+4. Next push — Apply pauses with a "Review deployments" button
 
 ## Pipeline Flow
 

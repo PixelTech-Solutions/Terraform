@@ -13,8 +13,8 @@
 # Apply and Destroy pause and wait for you to click "Review deployments".
 #
 # ONE-TIME SETUP per service repo:
-#   Environments are auto-created on first run.
-#   Go to Settings → Environments → add Required reviewers to enable approval gates.
+#   Create environments in Settings → Environments (e.g. "dev", "dev-destroy").
+#   Add Required reviewers to enable approval gates.
 # =============================================================================
 
 name: Terraform

@@ -69,7 +69,6 @@ on:
         required: false
 
 permissions:
-  id-token: write
   contents: read
   pull-requests: write
 
@@ -78,7 +77,6 @@ env:
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-  ARM_USE_OIDC: ${{ secrets.ARM_CLIENT_SECRET == '' && 'true' || 'false' }}
   SERVICE_NAME: ${{ inputs.service_name != '' && inputs.service_name || github.event.repository.name }}
   STATE_KEY: ${{ inputs.project_name }}/${{ inputs.service_name != '' && inputs.service_name || github.event.repository.name }}/${{ inputs.environment }}/terraform.tfstate
   TF_INPUT: "false"
@@ -132,14 +130,6 @@ jobs:
         with:
           terraform_version: ${{ inputs.terraform_version }}
 
-      - name: Azure Login (OIDC)
-        if: env.ARM_USE_OIDC == 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.ARM_CLIENT_ID }}
-          tenant-id: ${{ secrets.ARM_TENANT_ID }}
-          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-
       - name: Terraform Init
         working-directory: ${{ inputs.working_directory }}
         run: |
@@ -147,8 +137,7 @@ jobs:
             -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
             -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
             -backend-config="container_name=${{ inputs.backend_container }}" \
-            -backend-config="key=${{ env.STATE_KEY }}" \
-            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+            -backend-config="key=${{ env.STATE_KEY }}"
 
       - name: Terraform Plan
         working-directory: ${{ inputs.working_directory }}
@@ -202,14 +191,6 @@ jobs:
         with:
           terraform_version: ${{ inputs.terraform_version }}
 
-      - name: Azure Login (OIDC)
-        if: env.ARM_USE_OIDC == 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.ARM_CLIENT_ID }}
-          tenant-id: ${{ secrets.ARM_TENANT_ID }}
-          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-
       - name: Terraform Init
         working-directory: ${{ inputs.working_directory }}
         run: |
@@ -217,8 +198,7 @@ jobs:
             -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
             -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
             -backend-config="container_name=${{ inputs.backend_container }}" \
-            -backend-config="key=${{ env.STATE_KEY }}" \
-            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+            -backend-config="key=${{ env.STATE_KEY }}"
 
       - name: Download Plan Artifact
         uses: actions/download-artifact@v4
@@ -246,14 +226,6 @@ jobs:
         with:
           terraform_version: ${{ inputs.terraform_version }}
 
-      - name: Azure Login (OIDC)
-        if: env.ARM_USE_OIDC == 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.ARM_CLIENT_ID }}
-          tenant-id: ${{ secrets.ARM_TENANT_ID }}
-          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-
       - name: Terraform Init
         working-directory: ${{ inputs.working_directory }}
         run: |
@@ -261,8 +233,7 @@ jobs:
             -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
             -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
             -backend-config="container_name=${{ inputs.backend_container }}" \
-            -backend-config="key=${{ env.STATE_KEY }}" \
-            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+            -backend-config="key=${{ env.STATE_KEY }}"
 
       - name: Terraform Plan Destroy
         working-directory: ${{ inputs.working_directory }}

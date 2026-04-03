@@ -173,6 +173,29 @@ jobs:
               body: output
             });
 
+      - name: Check if reviewers are configured
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        id: check-reviewers
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const envName = '${{ inputs.environment }}';
+            try {
+              const { data } = await github.rest.repos.getEnvironment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment_name: envName,
+              });
+              const hasReviewers = data.protection_rules.some(r => r.type === 'required_reviewers' && r.reviewers.length > 0);
+              console.log(`Environment "${envName}" has reviewers: ${hasReviewers}`);
+              core.setOutput('has_reviewers', hasReviewers.toString());
+            } catch (e) {
+              console.log(`Environment "${envName}" not found. Create it and add reviewers: Settings → Environments`);
+              core.setOutput('has_reviewers', 'false');
+            }
+
+    outputs:
+      has_reviewers: ${{ steps.check-reviewers.outputs.has_reviewers }}
 
 
   # ===========================================================================
@@ -183,7 +206,9 @@ jobs:
     name: "Apply (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      needs.plan.outputs.has_reviewers == 'true'
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
@@ -218,7 +243,9 @@ jobs:
     name: "Destroy (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      needs.plan.outputs.has_reviewers == 'true'
     environment: "${{ inputs.environment }}-destroy"
     steps:
       - uses: actions/checkout@v4

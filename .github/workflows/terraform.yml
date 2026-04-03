@@ -1,15 +1,22 @@
 # =============================================================================
 # Reusable Terraform Workflow for Azure
 # =============================================================================
-# One pipeline, one dropdown to control everything:
+# GitLab-style pipeline with manual approval gates:
 #
-#   plan          → Format → Validate → Plan (default, read-only)
-#   apply         → Format → Validate → Plan → Apply
-#   destroy-plan  → Format → Validate → Destroy Plan (see what will die)
-#   destroy       → Format → Validate → Destroy Plan → Destroy
+#   Push/PR:
+#     Format ✅ → Validate ✅ → Plan ✅ (stops here)
 #
-# Push/PR always runs "plan" mode only.
-# Manual trigger gives you the dropdown to pick action.
+#   Push to main:
+#     Format ✅ → Validate ✅ → Plan ✅ → Apply ⏸️ [Review deployments button]
+#                                       → Destroy ⏸️ [Review deployments button]
+#
+# Apply and Destroy pause and wait for you to click "Review deployments".
+# That's GitHub's version of GitLab's play button.
+#
+# ONE-TIME SETUP per service repo:
+#   1. Settings → Environments → New: "dev" → Required reviewers → add yourself
+#   2. Settings → Environments → New: "dev-destroy" → Required reviewers → add yourself
+#   After that, every pipeline has the pause/approve behavior automatically.
 # =============================================================================
 
 name: Terraform
@@ -45,10 +52,6 @@ on:
         description: "State file key (e.g. myservice/terraform.tfstate)"
         type: string
         required: true
-      action:
-        description: "Action: plan, apply, destroy-plan, destroy"
-        type: string
-        default: "plan"
       additional_args:
         description: "Additional Terraform arguments"
         type: string
@@ -79,7 +82,7 @@ env:
 
 jobs:
   # ===========================================================================
-  # STAGE 1: Format
+  # Format Check (auto)
   # ===========================================================================
   format:
     name: "Format Check"
@@ -94,7 +97,7 @@ jobs:
         run: terraform fmt -check -recursive -diff
 
   # ===========================================================================
-  # STAGE 2: Validate
+  # Validate (auto)
   # ===========================================================================
   validate:
     name: "Validate"
@@ -113,13 +116,12 @@ jobs:
         run: terraform validate
 
   # ===========================================================================
-  # STAGE 3: Plan (action = plan or apply)
+  # Plan (auto)
   # ===========================================================================
   plan:
     name: "Plan (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [validate]
-    if: inputs.action == 'plan' || inputs.action == 'apply'
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -174,13 +176,15 @@ jobs:
             });
 
   # ===========================================================================
-  # STAGE 4: Apply (action = apply)
+  # Apply — PAUSES here with "Review deployments" button (like GitLab ▶)
+  # Requires environment "dev" (or "prod" etc) with required reviewers set
   # ===========================================================================
   apply:
     name: "Apply (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: inputs.action == 'apply'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -216,13 +220,15 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
   # ===========================================================================
-  # STAGE 5: Destroy Plan (action = destroy-plan or destroy)
+  # Destroy — PAUSES here with "Review deployments" button (like GitLab ▶)
+  # Requires environment "dev-destroy" with required reviewers set
   # ===========================================================================
-  destroy-plan:
-    name: "Destroy Plan (${{ inputs.environment }})"
+  destroy:
+    name: "Destroy (${{ inputs.environment }})"
     runs-on: ubuntu-latest
-    needs: [validate]
-    if: inputs.action == 'destroy-plan' || inputs.action == 'destroy'
+    needs: [plan]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: "${{ inputs.environment }}-destroy"
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -251,42 +257,9 @@ jobs:
         working-directory: ${{ inputs.working_directory }}
         run: |
           echo "========================================="
-          echo " DESTROY PLAN - Resources to be deleted:"
+          echo " Resources that WILL BE DESTROYED:"
           echo "========================================="
-          terraform plan -destroy \
-            ${{ inputs.additional_args }}
-
-  # ===========================================================================
-  # STAGE 6: Destroy (action = destroy)
-  # ===========================================================================
-  destroy:
-    name: "Destroy (${{ inputs.environment }})"
-    runs-on: ubuntu-latest
-    needs: [destroy-plan]
-    if: inputs.action == 'destroy'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ inputs.terraform_version }}
-
-      - name: Azure Login (OIDC)
-        if: env.ARM_USE_OIDC == 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.ARM_CLIENT_ID }}
-          tenant-id: ${{ secrets.ARM_TENANT_ID }}
-          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-
-      - name: Terraform Init
-        working-directory: ${{ inputs.working_directory }}
-        run: |
-          terraform init \
-            -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
-            -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
-            -backend-config="container_name=${{ inputs.backend_container }}" \
-            -backend-config="key=${{ inputs.backend_key }}" \
-            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+          terraform plan -destroy ${{ inputs.additional_args }}
 
       - name: Terraform Destroy
         working-directory: ${{ inputs.working_directory }}

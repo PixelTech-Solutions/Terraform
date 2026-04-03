@@ -2,16 +2,23 @@
 # Reusable Terraform Workflow for Azure
 # =============================================================================
 # Teams import this workflow and only need to set variables.
-# It handles: init → plan → apply (manual) → destroy (manual)
-# State is stored in Azure Blob Storage with native blob lease locking.
 #
-# Usage in consumer repo:
+# How it works:
+#   - Push/PR:                    Format → Validate → Plan (read-only, safe)
+#   - Manual + apply=true:        Format → Validate → Plan → Apply
+#   - Manual + destroy=true:      Format → Validate → Destroy
+#
+# State stored in Azure Blob Storage with native blob lease locking.
+# Auth via OIDC — no client secrets needed.
+#
+# Usage:
 #   jobs:
 #     terraform:
-#       uses: <org>/terraform-platform/.github/workflows/terraform.yml@main
+#       uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
 #       with:
 #         working_directory: ./infra
 #         environment: dev
+#         backend_key: "myservice/dev/terraform.tfstate"
 #       secrets: inherit
 # =============================================================================
 
@@ -39,7 +46,7 @@ on:
       backend_storage_account:
         description: "Azure Storage Account for state"
         type: string
-        default: "stterraformstate"
+        default: "stpixeltechstate"
       backend_container:
         description: "Blob container name for state files"
         type: string
@@ -48,8 +55,12 @@ on:
         description: "State file key (e.g. myservice/terraform.tfstate)"
         type: string
         required: true
+      apply:
+        description: "Set to true to run apply after plan"
+        type: boolean
+        default: false
       destroy:
-        description: "Set to true to run destroy instead of apply"
+        description: "Set to true to run destroy"
         type: boolean
         default: false
       additional_args:
@@ -69,14 +80,11 @@ on:
       ARM_CLIENT_SECRET:
         description: "Azure SP Client Secret (not needed if using OIDC)"
         required: false
-      TF_VARS:
-        description: "Additional Terraform variables as JSON"
-        required: false
 
 permissions:
-  id-token: write   # Required for OIDC authentication
+  id-token: write
   contents: read
-  pull-requests: write  # To post plan output on PRs
+  pull-requests: write
 
 env:
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
@@ -89,66 +97,52 @@ env:
 
 jobs:
   # ===========================================================================
-  # STAGE 1: Terraform Format Check
+  # STAGE 1: Format Check
   # ===========================================================================
   format:
     name: "Format Check"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ inputs.terraform_version }}
-
       - name: Terraform Format Check
         working-directory: ${{ inputs.working_directory }}
         run: terraform fmt -check -recursive -diff
 
   # ===========================================================================
-  # STAGE 2: Terraform Validate
+  # STAGE 2: Validate
   # ===========================================================================
   validate:
     name: "Validate"
     runs-on: ubuntu-latest
     needs: [format]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ inputs.terraform_version }}
-
       - name: Terraform Init (validation only)
         working-directory: ${{ inputs.working_directory }}
         run: terraform init -backend=false
-
       - name: Terraform Validate
         working-directory: ${{ inputs.working_directory }}
         run: terraform validate
 
   # ===========================================================================
-  # STAGE 3: Terraform Plan
+  # STAGE 3: Plan (skipped if destroy=true)
   # ===========================================================================
   plan:
     name: "Plan (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [validate]
-    outputs:
-      plan_exit_code: ${{ steps.plan.outputs.exitcode }}
+    if: inputs.destroy == false
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ inputs.terraform_version }}
-          terraform_wrapper: true
 
       - name: Azure Login (OIDC)
         if: env.ARM_USE_OIDC == 'true'
@@ -169,21 +163,13 @@ jobs:
             -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
 
       - name: Terraform Plan
-        id: plan
         working-directory: ${{ inputs.working_directory }}
         run: |
-          set +e
           terraform plan \
-            -detailed-exitcode \
             -out=tfplan \
             ${{ inputs.additional_args }}
-          EXIT_CODE=$?
-          echo "exitcode=$EXIT_CODE" >> "$GITHUB_OUTPUT"
-          if [ $EXIT_CODE -eq 1 ]; then exit 1; fi
-          exit 0
 
       - name: Upload Plan Artifact
-        if: always() && steps.plan.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ inputs.environment }}
@@ -196,13 +182,8 @@ jobs:
         with:
           script: |
             const output = `#### Terraform Plan - \`${{ inputs.environment }}\`
-            **Exit code:** \`${{ steps.plan.outputs.exitcode }}\`
-            - \`0\` = No changes
-            - \`1\` = Error
-            - \`2\` = Changes detected
-
+            Plan completed successfully. Review the plan output above.
             *Triggered by @${{ github.actor }}*`;
-
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
@@ -210,26 +191,17 @@ jobs:
               body: output
             });
 
-
-
   # ===========================================================================
-  # STAGE 4: Terraform Apply (Manual Approval via GitHub Environment)
+  # STAGE 4: Apply (only when apply=true)
   # ===========================================================================
   apply:
     name: "Apply (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: |
-      inputs.destroy == false &&
-      needs.plan.result == 'success' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    environment: ${{ inputs.environment }}
+    if: inputs.apply == true && inputs.destroy == false
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ inputs.terraform_version }}
 
@@ -262,22 +234,16 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
   # ===========================================================================
-  # STAGE 5: Terraform Destroy (Manual Approval via GitHub Environment)
+  # STAGE 5: Destroy (only when destroy=true)
   # ===========================================================================
   destroy:
     name: "Destroy (${{ inputs.environment }})"
     runs-on: ubuntu-latest
-    needs: [plan]
-    if: |
-      inputs.destroy == true &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    environment: "${{ inputs.environment }}-destroy"  # <-- Separate approval for destroy
+    needs: [validate]
+    if: inputs.destroy == true
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ inputs.terraform_version }}
 

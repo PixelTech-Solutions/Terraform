@@ -67,4 +67,3 @@ jobs:
       working_directory: ./infra
       environment: demo
     secrets: inherit
-    secrets: inherit

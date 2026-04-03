@@ -186,6 +186,7 @@ jobs:
 
       - name: Create environments for approval gates
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -200,14 +201,18 @@ jobs:
                 console.log(`Environment "${env}" already exists`);
               } catch (e) {
                 if (e.status === 404) {
-                  await github.rest.repos.createOrUpdateEnvironment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    environment_name: env,
-                    wait_timer: 0,
-                    reviewers: [],
-                  });
-                  console.log(`Created environment "${env}" — go add reviewers in Settings → Environments`);
+                  try {
+                    await github.rest.repos.createOrUpdateEnvironment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      environment_name: env,
+                      wait_timer: 0,
+                      reviewers: [],
+                    });
+                    console.log(`Created environment "${env}" — go add reviewers in Settings → Environments`);
+                  } catch (createErr) {
+                    console.log(`⚠️ Could not create environment "${env}" (${createErr.status}). Create it manually: Settings → Environments → New environment`);
+                  }
                 }
               }
             }
@@ -219,14 +224,19 @@ jobs:
         with:
           script: |
             const envName = '${{ inputs.environment }}';
-            const { data } = await github.rest.repos.getEnvironment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              environment_name: envName,
-            });
-            const hasReviewers = data.protection_rules.some(r => r.type === 'required_reviewers' && r.reviewers.length > 0);
-            console.log(`Environment "${envName}" has reviewers: ${hasReviewers}`);
-            core.setOutput('has_reviewers', hasReviewers.toString());
+            try {
+              const { data } = await github.rest.repos.getEnvironment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment_name: envName,
+              });
+              const hasReviewers = data.protection_rules.some(r => r.type === 'required_reviewers' && r.reviewers.length > 0);
+              console.log(`Environment "${envName}" has reviewers: ${hasReviewers}`);
+              core.setOutput('has_reviewers', hasReviewers.toString());
+            } catch (e) {
+              console.log(`⚠️ Environment "${envName}" not found or not accessible. Apply will be skipped. Create it manually: Settings → Environments → New environment`);
+              core.setOutput('has_reviewers', 'false');
+            }
 
     outputs:
       has_reviewers: ${{ steps.check-reviewers.outputs.has_reviewers }}

@@ -14,8 +14,8 @@
 # That's GitHub's version of GitLab's play button.
 #
 # ONE-TIME SETUP per service repo:
-#   1. Settings → Environments → New: "dev" → Required reviewers → add yourself
-#   2. Settings → Environments → New: "dev-destroy" → Required reviewers → add yourself
+#   Environments are auto-created by the Plan job on first run.
+#   Just go to Settings → Environments → "dev" / "dev-destroy" → add Required reviewers.
 # =============================================================================
 
 name: Terraform
@@ -174,16 +174,8 @@ jobs:
               body: output
             });
 
-  # ===========================================================================
-  # Setup Environments (auto-creates dev and dev-destroy so you just add rules)
-  # ===========================================================================
-  setup-environments:
-    name: "Setup Environments"
-    runs-on: ubuntu-latest
-    needs: [validate]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    steps:
-      - name: Create environments via API
+      - name: Create environments for approval gates
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: actions/github-script@v7
         with:
           script: |
@@ -211,7 +203,8 @@ jobs:
             }
 
       - name: Check if reviewers are configured
-        id: check
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        id: check-reviewers
         uses: actions/github-script@v7
         with:
           script: |
@@ -226,7 +219,7 @@ jobs:
             core.setOutput('has_reviewers', hasReviewers.toString());
 
     outputs:
-      has_reviewers: ${{ steps.check.outputs.has_reviewers }}
+      has_reviewers: ${{ steps.check-reviewers.outputs.has_reviewers }}
 
   # ===========================================================================
   # Apply — PAUSES here with "Review deployments" button (like GitLab ▶)
@@ -235,10 +228,10 @@ jobs:
   apply:
     name: "Apply (${{ inputs.environment }})"
     runs-on: ubuntu-latest
-    needs: [plan, setup-environments]
+    needs: [plan]
     if: |
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
-      needs.setup-environments.outputs.has_reviewers == 'true'
+      needs.plan.outputs.has_reviewers == 'true'
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4

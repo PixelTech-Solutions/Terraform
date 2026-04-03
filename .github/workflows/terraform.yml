@@ -177,11 +177,13 @@ jobs:
             -detailed-exitcode \
             -out=tfplan \
             ${{ inputs.additional_args }}
-          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
-        continue-on-error: true
+          EXIT_CODE=$?
+          echo "exitcode=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [ $EXIT_CODE -eq 1 ]; then exit 1; fi
+          exit 0
 
       - name: Upload Plan Artifact
-        if: steps.plan.outputs.exitcode == '2'
+        if: steps.plan.outputs.exitcode != '0'
         uses: actions/upload-artifact@v4
         with:
           name: tfplan-${{ inputs.environment }}
@@ -208,9 +210,7 @@ jobs:
               body: output
             });
 
-      - name: Plan Status
-        if: steps.plan.outputs.exitcode == '1'
-        run: exit 1
+
 
   # ===========================================================================
   # STAGE 4: Terraform Apply (Manual Approval via GitHub Environment)
@@ -221,9 +221,9 @@ jobs:
     needs: [plan]
     if: |
       inputs.destroy == false &&
-      needs.plan.outputs.plan_exit_code == '2' &&
+      needs.plan.result == 'success' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    environment: ${{ inputs.environment }}  # <-- This triggers manual approval
+    environment: ${{ inputs.environment }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

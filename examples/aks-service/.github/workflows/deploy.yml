@@ -4,7 +4,7 @@
 # This is ALL a team needs in their repo. Just import the template and set vars.
 # The platform workflow handles init, plan, apply, destroy automatically.
 #
-# State key auto-derived:  <service_name>/<environment>/terraform.tfstate
+# State key auto-derived:  <project_name>/<service_name>/<environment>/terraform.tfstate
 # Var file auto-derived:   environments/<environment>.tfvars
 # =============================================================================
 
@@ -30,6 +30,7 @@ jobs:
     with:
       working_directory: ./infra
       environment: dev
+      project_name: platform
       service_name: aks-cluster
     secrets: inherit
 
@@ -40,6 +41,7 @@ jobs:
     with:
       working_directory: ./infra
       environment: qa
+      project_name: platform
       service_name: aks-cluster
     secrets: inherit
 
@@ -50,6 +52,7 @@ jobs:
     with:
       working_directory: ./infra
       environment: uat
+      project_name: platform
       service_name: aks-cluster
     secrets: inherit
 
@@ -60,6 +63,7 @@ jobs:
     with:
       working_directory: ./infra
       environment: prod
+      project_name: platform
       service_name: aks-cluster
     secrets: inherit
 
@@ -70,5 +74,6 @@ jobs:
     with:
       working_directory: ./infra
       environment: demo
+      project_name: platform
       service_name: aks-cluster
     secrets: inherit

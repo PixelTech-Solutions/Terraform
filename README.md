@@ -72,12 +72,13 @@ jobs:
     with:
       working_directory: ./infra
       environment: dev
+      project_name: my-project
       service_name: my-service
     secrets: inherit
 ```
 
 That's it. The workflow auto-derives:
-- **State key:** `my-service/dev/terraform.tfstate`
+- **State key:** `my-project/my-service/dev/terraform.tfstate`
 - **Var file:** `-var-file=environments/dev.tfvars`
 
 ### 2. Add Terraform Code
@@ -133,7 +134,8 @@ On push to main:
 |---|---|---|---|
 | `working_directory` | No | `.` | Path to Terraform root module |
 | `environment` | **Yes** | — | `dev`, `staging`, `prod` |
-| `service_name` | No | Repo name | Used for state key and tfvars path |
+| `project_name` | **Yes** | — | Project name — groups services in the state path |
+| `service_name` | No | Repo name | Service name within the project |
 | `terraform_version` | No | `1.9.0` | Terraform version |
 | `backend_resource_group` | No | `rg-terraform-state` | Resource group for state storage |
 | `backend_storage_account` | No | `stpixeltechstate` | Storage account name |
@@ -142,24 +144,24 @@ On push to main:
 
 ### Auto-Derived Values
 
-From `service_name` (defaults to repo name) + `environment`:
+From `project_name` + `service_name` (defaults to repo name) + `environment`:
 
 | What | Pattern | Example |
 |---|---|---|
-| State key | `<service_name>/<environment>/terraform.tfstate` | `svc-blob-storage-example/dev/terraform.tfstate` |
+| State key | `<project_name>/<service_name>/<environment>/terraform.tfstate` | `storage/svc-blob-storage-example/dev/terraform.tfstate` |
 | Var file | `environments/<environment>.tfvars` | `environments/dev.tfvars` |
 
 ## State File Convention
 
 ```
-<service-name>/<environment>/terraform.tfstate
+<project-name>/<service-name>/<environment>/terraform.tfstate
 ```
 
 Examples:
 ```
-svc-blob-storage-example/dev/terraform.tfstate
-svc-aks-cluster/prod/terraform.tfstate
-svc-sql-database/staging/terraform.tfstate
+storage/svc-blob-storage-example/dev/terraform.tfstate
+platform/aks-cluster/prod/terraform.tfstate
+data/sql-database/staging/terraform.tfstate
 ```
 
 ## Authentication

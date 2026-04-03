@@ -295,7 +295,9 @@ jobs:
     name: "Destroy (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      needs.plan.outputs.has_reviewers == 'true'
     environment: "${{ inputs.environment }}-destroy"
     steps:
       - uses: actions/checkout@v4

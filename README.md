@@ -57,14 +57,7 @@ on:
   push:
     branches: [main]
     paths: [infra/**]
-  pull_request:
-    paths: [infra/**]
   workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-  pull-requests: write
 
 jobs:
   dev:

@@ -1,7 +1,7 @@
 # =============================================================================
 # Reusable Terraform Workflow for Azure
 # =============================================================================
-# GitLab-style pipeline with manual approval gates:
+# Pipeline with manual approval gates:
 #
 #   Push/PR:
 #     Format ✅ → Validate ✅ → Plan ✅ (stops here)
@@ -11,7 +11,6 @@
 #                                       → Destroy ⏸️ [Review deployments button]
 #
 # Apply and Destroy pause and wait for you to click "Review deployments".
-# That's GitHub's version of GitLab's play button.
 #
 # ONE-TIME SETUP per service repo:
 #   Environments are auto-created by the Plan job on first run.
@@ -233,7 +232,7 @@ jobs:
       has_reviewers: ${{ steps.check-reviewers.outputs.has_reviewers }}
 
   # ===========================================================================
-  # Apply — PAUSES here with "Review deployments" button (like GitLab ▶)
+  # Apply — PAUSES here with "Review deployments" button
   # Skips if no reviewers configured (safe by default)
   # ===========================================================================
   apply:
@@ -279,8 +278,8 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
   # ===========================================================================
-  # Destroy — PAUSES here with "Review deployments" button (like GitLab ▶)
-  # Requires environment "dev-destroy" with required reviewers set
+  # Destroy — PAUSES here with "Review deployments" button
+  # Requires environment "<env>-destroy" with required reviewers set
   # ===========================================================================
   destroy:
     name: "Destroy (${{ inputs.environment }})"

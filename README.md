@@ -1,4 +1,4 @@
-# Terraform Platform Engineering
+# Terraform Platform
 
 A reusable Terraform CI/CD platform for **GitHub Actions + Azure**. Teams import one workflow, set a few variables, and get automatic **format → validate → plan → apply → destroy** pipelines with remote state in Azure Blob Storage.
 

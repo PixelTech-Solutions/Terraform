@@ -72,10 +72,12 @@ jobs:
     with:
       working_directory: ./infra
       environment: dev
-      backend_key: "my-service/dev/terraform.tfstate"
-      additional_args: "-var-file=environments/dev.tfvars"
     secrets: inherit
 ```
+
+That's it. The workflow auto-derives:
+- **State key:** `<repo-name>/dev/terraform.tfstate`
+- **Var file:** `-var-file=environments/dev.tfvars`
 
 ### 2. Add Terraform Code
 
@@ -130,12 +132,21 @@ On push to main:
 |---|---|---|---|
 | `working_directory` | No | `.` | Path to Terraform root module |
 | `environment` | **Yes** | — | `dev`, `staging`, `prod` |
+| `service_name` | No | Repo name | Used for state key and tfvars path |
 | `terraform_version` | No | `1.9.0` | Terraform version |
 | `backend_resource_group` | No | `rg-terraform-state` | Resource group for state storage |
 | `backend_storage_account` | No | `stpixeltechstate` | Storage account name |
 | `backend_container` | No | `tfstate` | Blob container name |
-| `backend_key` | **Yes** | — | Unique state file path (e.g. `svc-name/dev/terraform.tfstate`) |
-| `additional_args` | No | `""` | Extra Terraform CLI arguments (e.g. `-var-file=...`) |
+| `additional_args` | No | `""` | Extra Terraform CLI args (appended after `-var-file`) |
+
+### Auto-Derived Values
+
+From `service_name` (defaults to repo name) + `environment`:
+
+| What | Pattern | Example |
+|---|---|---|
+| State key | `<service_name>/<environment>/terraform.tfstate` | `svc-blob-storage-example/dev/terraform.tfstate` |
+| Var file | `environments/<environment>.tfvars` | `environments/dev.tfvars` |
 
 ## State File Convention
 

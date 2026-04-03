@@ -3,6 +3,9 @@
 # =============================================================================
 # This is ALL a team needs in their repo. Just import the template and set vars.
 # The platform workflow handles init, plan, apply, destroy automatically.
+#
+# State key auto-derived:  <repo-name>/<environment>/terraform.tfstate
+# Var file auto-derived:   environments/<environment>.tfvars
 # =============================================================================
 
 name: "Deploy AKS Cluster"
@@ -15,11 +18,11 @@ on:
     branches: [main]
     paths: ["infra/**"]
   workflow_dispatch:
-    inputs:
-      destroy:
-        description: "Destroy infrastructure?"
-        type: boolean
-        default: false
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
 
 jobs:
   dev:
@@ -27,9 +30,6 @@ jobs:
     with:
       working_directory: ./infra
       environment: dev
-      backend_key: "aks-cluster/dev/terraform.tfstate"
-      additional_args: "-var-file=environments/dev.tfvars"
-      destroy: ${{ github.event.inputs.destroy == 'true' }}
     secrets: inherit
 
   qa:
@@ -39,9 +39,6 @@ jobs:
     with:
       working_directory: ./infra
       environment: qa
-      backend_key: "aks-cluster/qa/terraform.tfstate"
-      additional_args: "-var-file=environments/qa.tfvars"
-      destroy: ${{ github.event.inputs.destroy == 'true' }}
     secrets: inherit
 
   uat:
@@ -51,9 +48,6 @@ jobs:
     with:
       working_directory: ./infra
       environment: uat
-      backend_key: "aks-cluster/uat/terraform.tfstate"
-      additional_args: "-var-file=environments/uat.tfvars"
-      destroy: ${{ github.event.inputs.destroy == 'true' }}
     secrets: inherit
 
   prod:
@@ -63,9 +57,6 @@ jobs:
     with:
       working_directory: ./infra
       environment: prod
-      backend_key: "aks-cluster/prod/terraform.tfstate"
-      additional_args: "-var-file=environments/prod.tfvars"
-      destroy: ${{ github.event.inputs.destroy == 'true' }}
     secrets: inherit
 
   demo:
@@ -75,7 +66,5 @@ jobs:
     with:
       working_directory: ./infra
       environment: demo
-      backend_key: "aks-cluster/demo/terraform.tfstate"
-      additional_args: "-var-file=environments/demo.tfvars"
-      destroy: ${{ github.event.inputs.destroy == 'true' }}
+    secrets: inherit
     secrets: inherit

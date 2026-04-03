@@ -13,8 +13,8 @@
 # Apply and Destroy pause and wait for you to click "Review deployments".
 #
 # ONE-TIME SETUP per service repo:
-#   Environments are auto-created by the Plan job on first run.
-#   Just go to Settings → Environments → "dev" / "dev-destroy" → add Required reviewers.
+#   Environments are auto-created on first run.
+#   Go to Settings → Environments → add Required reviewers to enable approval gates.
 # =============================================================================
 
 name: Terraform
@@ -184,74 +184,17 @@ jobs:
               body: output
             });
 
-      - name: Create environments for approval gates
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const envs = ['${{ inputs.environment }}', '${{ inputs.environment }}-destroy'];
-            for (const env of envs) {
-              try {
-                await github.rest.repos.getEnvironment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  environment_name: env,
-                });
-                console.log(`Environment "${env}" already exists`);
-              } catch (e) {
-                if (e.status === 404) {
-                  try {
-                    await github.rest.repos.createOrUpdateEnvironment({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      environment_name: env,
-                      wait_timer: 0,
-                      reviewers: [],
-                    });
-                    console.log(`Created environment "${env}" — go add reviewers in Settings → Environments`);
-                  } catch (createErr) {
-                    console.log(`⚠️ Could not create environment "${env}" (${createErr.status}). Create it manually: Settings → Environments → New environment`);
-                  }
-                }
-              }
-            }
 
-      - name: Check if reviewers are configured
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        id: check-reviewers
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const envName = '${{ inputs.environment }}';
-            try {
-              const { data } = await github.rest.repos.getEnvironment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                environment_name: envName,
-              });
-              const hasReviewers = data.protection_rules.some(r => r.type === 'required_reviewers' && r.reviewers.length > 0);
-              console.log(`Environment "${envName}" has reviewers: ${hasReviewers}`);
-              core.setOutput('has_reviewers', hasReviewers.toString());
-            } catch (e) {
-              console.log(`⚠️ Environment "${envName}" not found or not accessible. Apply will be skipped. Create it manually: Settings → Environments → New environment`);
-              core.setOutput('has_reviewers', 'false');
-            }
-
-    outputs:
-      has_reviewers: ${{ steps.check-reviewers.outputs.has_reviewers }}
 
   # ===========================================================================
   # Apply — PAUSES here with "Review deployments" button
-  # Skips if no reviewers configured (safe by default)
+  # Environments are auto-created on first run. Add reviewers to enable gates.
   # ===========================================================================
   apply:
     name: "Apply (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: |
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
-      needs.plan.outputs.has_reviewers == 'true'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
@@ -289,15 +232,13 @@ jobs:
 
   # ===========================================================================
   # Destroy — PAUSES here with "Review deployments" button
-  # Requires environment "<env>-destroy" with required reviewers set
+  # Environments are auto-created on first run. Add reviewers to enable gates.
   # ===========================================================================
   destroy:
     name: "Destroy (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: |
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
-      needs.plan.outputs.has_reviewers == 'true'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     environment: "${{ inputs.environment }}-destroy"
     steps:
       - uses: actions/checkout@v4

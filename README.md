@@ -72,11 +72,12 @@ jobs:
     with:
       working_directory: ./infra
       environment: dev
+      service_name: my-service
     secrets: inherit
 ```
 
 That's it. The workflow auto-derives:
-- **State key:** `<repo-name>/dev/terraform.tfstate`
+- **State key:** `my-service/dev/terraform.tfstate`
 - **Var file:** `-var-file=environments/dev.tfvars`
 
 ### 2. Add Terraform Code

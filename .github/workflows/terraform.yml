@@ -47,12 +47,12 @@ on:
         description: "Blob container name for state files"
         type: string
         default: "tfstate"
-      backend_key:
-        description: "State file key (e.g. myservice/terraform.tfstate)"
+      service_name:
+        description: "Service name — used for state key and tfvars path (defaults to repo name)"
         type: string
-        required: true
+        default: ""
       additional_args:
-        description: "Additional Terraform arguments"
+        description: "Extra Terraform CLI arguments (appended after -var-file)"
         type: string
         default: ""
     secrets:
@@ -76,6 +76,7 @@ env:
   ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
   ARM_USE_OIDC: ${{ secrets.ARM_CLIENT_SECRET == '' && 'true' || 'false' }}
+  SERVICE_NAME: ${{ inputs.service_name != '' && inputs.service_name || github.event.repository.name }}
   TF_INPUT: "false"
   TF_IN_AUTOMATION: "true"
 
@@ -142,14 +143,18 @@ jobs:
             -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
             -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
             -backend-config="container_name=${{ inputs.backend_container }}" \
-            -backend-config="key=${{ inputs.backend_key }}" \
+            -backend-config="key=${{ env.SERVICE_NAME }}/${{ inputs.environment }}/terraform.tfstate" \
             -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
 
       - name: Terraform Plan
         working-directory: ${{ inputs.working_directory }}
         run: |
+          echo "Service: ${{ env.SERVICE_NAME }}"
+          echo "State key: ${{ env.SERVICE_NAME }}/${{ inputs.environment }}/terraform.tfstate"
+          echo "Var file: environments/${{ inputs.environment }}.tfvars"
           terraform plan \
             -out=tfplan \
+            -var-file=environments/${{ inputs.environment }}.tfvars \
             ${{ inputs.additional_args }}
 
       - name: Upload Plan Artifact
@@ -254,7 +259,7 @@ jobs:
             -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
             -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
             -backend-config="container_name=${{ inputs.backend_container }}" \
-            -backend-config="key=${{ inputs.backend_key }}" \
+            -backend-config="key=${{ env.SERVICE_NAME }}/${{ inputs.environment }}/terraform.tfstate" \
             -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
 
       - name: Download Plan Artifact
@@ -298,7 +303,7 @@ jobs:
             -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
             -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
             -backend-config="container_name=${{ inputs.backend_container }}" \
-            -backend-config="key=${{ inputs.backend_key }}" \
+            -backend-config="key=${{ env.SERVICE_NAME }}/${{ inputs.environment }}/terraform.tfstate" \
             -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
 
       - name: Terraform Plan Destroy
@@ -307,10 +312,13 @@ jobs:
           echo "========================================="
           echo " Resources that WILL BE DESTROYED:"
           echo "========================================="
-          terraform plan -destroy ${{ inputs.additional_args }}
+          terraform plan -destroy \
+            -var-file=environments/${{ inputs.environment }}.tfvars \
+            ${{ inputs.additional_args }}
 
       - name: Terraform Destroy
         working-directory: ${{ inputs.working_directory }}
         run: |
           terraform destroy -auto-approve \
+            -var-file=environments/${{ inputs.environment }}.tfvars \
             ${{ inputs.additional_args }}

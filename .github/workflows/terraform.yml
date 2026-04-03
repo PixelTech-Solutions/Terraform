@@ -1,25 +1,15 @@
 # =============================================================================
 # Reusable Terraform Workflow for Azure
 # =============================================================================
-# Teams import this workflow and only need to set variables.
+# One pipeline, one dropdown to control everything:
 #
-# How it works:
-#   - Push/PR:                    Format → Validate → Plan (read-only, safe)
-#   - Manual + apply=true:        Format → Validate → Plan → Apply
-#   - Manual + destroy=true:      Format → Validate → Destroy
+#   plan          → Format → Validate → Plan (default, read-only)
+#   apply         → Format → Validate → Plan → Apply
+#   destroy-plan  → Format → Validate → Destroy Plan (see what will die)
+#   destroy       → Format → Validate → Destroy Plan → Destroy
 #
-# State stored in Azure Blob Storage with native blob lease locking.
-# Auth via OIDC — no client secrets needed.
-#
-# Usage:
-#   jobs:
-#     terraform:
-#       uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
-#       with:
-#         working_directory: ./infra
-#         environment: dev
-#         backend_key: "myservice/dev/terraform.tfstate"
-#       secrets: inherit
+# Push/PR always runs "plan" mode only.
+# Manual trigger gives you the dropdown to pick action.
 # =============================================================================
 
 name: Terraform
@@ -55,30 +45,22 @@ on:
         description: "State file key (e.g. myservice/terraform.tfstate)"
         type: string
         required: true
-      apply:
-        description: "Set to true to run apply after plan"
-        type: boolean
-        default: false
-      destroy:
-        description: "Set to true to run destroy"
-        type: boolean
-        default: false
+      action:
+        description: "Action: plan, apply, destroy-plan, destroy"
+        type: string
+        default: "plan"
       additional_args:
         description: "Additional Terraform arguments"
         type: string
         default: ""
     secrets:
       ARM_CLIENT_ID:
-        description: "Azure Service Principal Client ID (or OIDC app registration)"
         required: true
       ARM_TENANT_ID:
-        description: "Azure AD Tenant ID"
         required: true
       ARM_SUBSCRIPTION_ID:
-        description: "Azure Subscription ID"
         required: true
       ARM_CLIENT_SECRET:
-        description: "Azure SP Client Secret (not needed if using OIDC)"
         required: false
 
 permissions:
@@ -97,7 +79,7 @@ env:
 
 jobs:
   # ===========================================================================
-  # STAGE 1: Format Check
+  # STAGE 1: Format
   # ===========================================================================
   format:
     name: "Format Check"
@@ -131,13 +113,13 @@ jobs:
         run: terraform validate
 
   # ===========================================================================
-  # STAGE 3: Plan (skipped if destroy=true)
+  # STAGE 3: Plan (action = plan or apply)
   # ===========================================================================
   plan:
     name: "Plan (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [validate]
-    if: inputs.destroy == false
+    if: inputs.action == 'plan' || inputs.action == 'apply'
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -182,7 +164,7 @@ jobs:
         with:
           script: |
             const output = `#### Terraform Plan - \`${{ inputs.environment }}\`
-            Plan completed successfully. Review the plan output above.
+            Plan completed. Review the output above.
             *Triggered by @${{ github.actor }}*`;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -192,13 +174,13 @@ jobs:
             });
 
   # ===========================================================================
-  # STAGE 4: Apply (only when apply=true)
+  # STAGE 4: Apply (action = apply)
   # ===========================================================================
   apply:
     name: "Apply (${{ inputs.environment }})"
     runs-on: ubuntu-latest
     needs: [plan]
-    if: inputs.apply == true && inputs.destroy == false
+    if: inputs.action == 'apply'
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -234,13 +216,54 @@ jobs:
         run: terraform apply -auto-approve tfplan
 
   # ===========================================================================
-  # STAGE 5: Destroy (only when destroy=true)
+  # STAGE 5: Destroy Plan (action = destroy-plan or destroy)
+  # ===========================================================================
+  destroy-plan:
+    name: "Destroy Plan (${{ inputs.environment }})"
+    runs-on: ubuntu-latest
+    needs: [validate]
+    if: inputs.action == 'destroy-plan' || inputs.action == 'destroy'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Azure Login (OIDC)
+        if: env.ARM_USE_OIDC == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ inputs.backend_resource_group }}" \
+            -backend-config="storage_account_name=${{ inputs.backend_storage_account }}" \
+            -backend-config="container_name=${{ inputs.backend_container }}" \
+            -backend-config="key=${{ inputs.backend_key }}" \
+            -backend-config="use_oidc=${{ env.ARM_USE_OIDC }}"
+
+      - name: Terraform Plan Destroy
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          echo "========================================="
+          echo " DESTROY PLAN - Resources to be deleted:"
+          echo "========================================="
+          terraform plan -destroy \
+            ${{ inputs.additional_args }}
+
+  # ===========================================================================
+  # STAGE 6: Destroy (action = destroy)
   # ===========================================================================
   destroy:
     name: "Destroy (${{ inputs.environment }})"
     runs-on: ubuntu-latest
-    needs: [validate]
-    if: inputs.destroy == true
+    needs: [destroy-plan]
+    if: inputs.action == 'destroy'
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3

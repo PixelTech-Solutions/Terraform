@@ -166,24 +166,35 @@ data/sql-database/staging/terraform.tfstate
 
 ## Authentication
 
-This platform uses **OIDC (OpenID Connect)** federated credentials — no client secrets needed.
+The workflow supports two authentication methods — auto-detected via the `ARM_CLIENT_SECRET` secret:
 
-GitHub Actions requests a short-lived token from Azure AD on every workflow run. To set up:
+| Method | When | Setup per new repo |
+|---|---|---|
+| **Client Secret** | `ARM_CLIENT_SECRET` is set | **None** — works immediately for all repos in the org |
+| **OIDC** | `ARM_CLIENT_SECRET` is empty | Requires federated credentials per repo/branch/environment |
 
-1. Create an **App Registration** in Azure AD
-2. Create a **Service Principal** and assign `Contributor` + `Storage Blob Data Contributor` roles
-3. Add **Federated Credentials** for your repo (main branch, PRs, and each environment)
-4. Set org/repo secrets: `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`
+We use **client secret** (org-level secret) for simplicity — any new repo in the org works instantly with zero Azure setup.
+
+Org secrets:
+- `ARM_CLIENT_ID` — App registration client ID
+- `ARM_TENANT_ID` — Azure AD tenant ID
+- `ARM_SUBSCRIPTION_ID` — Target subscription
+- `ARM_CLIENT_SECRET` — Service principal client secret
+
+The service principal needs `Contributor` + `Storage Blob Data Contributor` roles at subscription level.
+
+> **Note:** To switch to OIDC (more secure, no secret rotation), remove `ARM_CLIENT_SECRET` and add federated credentials per repo. The workflow auto-detects.
 
 ## Onboarding a New Service
 
 1. Create a new repo in the org
 2. Add `infra/` folder with your Terraform code (`provider.tf` must have `backend "azurerm" {}`)
 3. Add `.github/workflows/infra.yml` calling this reusable workflow (see Quick Start)
-4. Add federated credentials in Azure for the new repo
-5. Push to `main` — pipeline creates environments automatically
-6. Add reviewers to the environments
-7. Done — Apply and Destroy are gated by approval
+4. Push to `main` — pipeline creates environments automatically
+5. Add reviewers to the environments
+6. Done — Apply and Destroy are gated by approval
+
+No Azure setup needed per repo — org secrets handle auth for all repos.
 
 ## File Structure
 

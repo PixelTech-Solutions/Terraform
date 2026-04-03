@@ -36,8 +36,9 @@ A reusable Terraform CI/CD platform for **GitHub Actions + Azure**. Teams import
 
 ## Features
 
-- **One workflow to rule them all** — teams write ~30 lines of YAML to get full CI/CD
-- **OIDC authentication** — no client secrets to manage or rotate
+- **One workflow to rule them all** — teams write ~30 lines of YAML per environment to get full CI/CD
+- **Client secret auth** — org-level secret, zero setup per new repo
+- **Separate pipeline per environment** — deploy and manage each environment independently
 - **Azure Blob Storage backend** — state + locking in a single resource (blob leases)
 - **Manual approval gates** — Apply and Destroy require reviewer approval via GitHub Environments
 - **Auto-created environments** — the Plan job creates `dev` and `dev-destroy` environments automatically
@@ -48,10 +49,10 @@ A reusable Terraform CI/CD platform for **GitHub Actions + Azure**. Teams import
 
 ### 1. Use in Your Service Repo
 
-Create `.github/workflows/infra.yml`:
+Create one workflow per environment. Example `.github/workflows/infra-dev.yml`:
 
 ```yaml
-name: Infrastructure
+name: "Infrastructure - Dev"
 
 on:
   push:
@@ -70,7 +71,7 @@ jobs:
   dev:
     uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
     with:
-      working_directory: ./infra
+      working_directory: ./infra/my-service
       environment: dev
       project_name: my-project
       service_name: my-service
@@ -83,8 +84,29 @@ That's it. The workflow auto-derives:
 
 ### 2. Add Terraform Code
 
+Organise your infra folder with modules and service folders:
+
+```
+infra/
+  modules/           # Reusable modules
+    my-module/
+      main.tf
+      variables.tf
+      outputs.tf
+  my-service/         # Service root (working_directory points here)
+    main.tf           # Calls modules, creates resources
+    variables.tf
+    outputs.tf
+    provider.tf
+    data.tf
+    locals.tf
+    environments/
+      dev.tfvars
+      qa.tfvars
+```
+
 ```hcl
-# infra/provider.tf
+# infra/my-service/provider.tf
 terraform {
   required_version = ">= 1.9.0"
   backend "azurerm" {}   # Configured automatically by the pipeline
@@ -188,8 +210,8 @@ The service principal needs `Contributor` + `Storage Blob Data Contributor` role
 ## Onboarding a New Service
 
 1. Create a new repo in the org
-2. Add `infra/` folder with your Terraform code (`provider.tf` must have `backend "azurerm" {}`)
-3. Add `.github/workflows/infra.yml` calling this reusable workflow (see Quick Start)
+2. Add `infra/modules/` with reusable modules and `infra/<service-name>/` with your Terraform code (`provider.tf` must have `backend "azurerm" {}`)
+3. Add one workflow per environment in `.github/workflows/` calling this reusable workflow (see Quick Start)
 4. Push to `main` — pipeline creates environments automatically
 5. Add reviewers to the environments
 6. Done — Apply and Destroy are gated by approval
@@ -201,22 +223,34 @@ No Azure setup needed per repo — org secrets handle auth for all repos.
 ```
 PixelTech-Solutions/Terraform/
 ├── .github/workflows/
-│   └── terraform.yml          # Reusable workflow (the platform)
+│   └── terraform.yml              # Reusable workflow (the platform)
 ├── examples/
-│   └── aks-service/           # Example consumer repo
+│   └── aks-service/               # Example consumer repo
 │       ├── .github/workflows/
-│       │   └── deploy.yml
+│       │   ├── deploy.yml         # Dev pipeline
+│       │   ├── deploy-qa.yml      # QA pipeline
+│       │   ├── deploy-uat.yml     # UAT pipeline
+│       │   ├── deploy-prod.yml    # Prod pipeline
+│       │   └── deploy-demo.yml    # Demo pipeline
 │       └── infra/
-│           ├── main.tf
-│           ├── provider.tf
-│           ├── variables.tf
-│           ├── outputs.tf
-│           └── environments/
-│               ├── dev.tfvars
-│               ├── qa.tfvars
-│               ├── uat.tfvars
-│               ├── prod.tfvars
-│               └── demo.tfvars
+│           ├── modules/
+│           │   └── aks/
+│           │       ├── main.tf
+│           │       ├── variables.tf
+│           │       └── outputs.tf
+│           └── aks-cluster/           # Service folder
+│               ├── main.tf
+│               ├── variables.tf
+│               ├── outputs.tf
+│               ├── provider.tf
+│               ├── data.tf
+│               ├── locals.tf
+│               └── environments/
+│                   ├── dev.tfvars
+│                   ├── qa.tfvars
+│                   ├── uat.tfvars
+│                   ├── prod.tfvars
+│                   └── demo.tfvars
 ├── .gitignore
 └── README.md
 ```

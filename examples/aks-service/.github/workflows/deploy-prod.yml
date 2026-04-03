@@ -1,11 +1,8 @@
 # =============================================================================
-# Example: AKS cluster — Dev environment
-# =============================================================================
-# State key auto-derived:  platform/aks-cluster/dev/terraform.tfstate
-# Var file auto-derived:   environments/dev.tfvars
+# Example: AKS cluster — Prod environment
 # =============================================================================
 
-name: "Deploy AKS - Dev"
+name: "Deploy AKS - Prod"
 
 on:
   push:
@@ -22,11 +19,11 @@ permissions:
   pull-requests: write
 
 jobs:
-  dev:
+  prod:
     uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
     with:
       working_directory: ./infra/aks-cluster
-      environment: dev
+      environment: prod
       project_name: platform
       service_name: aks-cluster
     secrets: inherit

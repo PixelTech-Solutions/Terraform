@@ -1,57 +1,17 @@
 # Terraform Platform
 
-A reusable Terraform CI/CD platform for **GitHub Actions + Azure**. Teams import one workflow, set a few variables, and get automatic **format → validate → plan → apply → destroy** pipelines with remote state in Azure Blob Storage.
+Reusable Terraform workflow for GitHub Actions and Azure.
 
-## Architecture
+## What It Does
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  PixelTech-Solutions/Terraform (this repo)              │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │ .github/workflows/terraform.yml (reusable)        │  │
-│  │  Format → Validate → Plan → Apply → Destroy       │  │
-│  └───────────────────────────────────────────────────┘  │
-└─────────────────────────┬───────────────────────────────┘
-                          │  uses: PixelTech-Solutions/Terraform/...@main
-          ┌───────────────┼───────────────┐
-          ▼               ▼               ▼
-   ┌──────────┐    ┌──────────┐    ┌──────────┐
-   │ svc-blob │    │ svc-aks  │    │ svc-sql  │
-   │ ~30 lines│    │ ~30 lines│    │ ~30 lines│
-   └──────────┘    └──────────┘    └──────────┘
-          │               │               │
-          └───────────────┼───────────────┘
-                          ▼
-          ┌───────────────────────────────┐
-          │  Azure Blob Storage           │
-          │  stpixeltechstate / tfstate   │
-          │  ┌─────────────────────────┐  │
-          │  │ svc-blob/dev/tf.state   │  │
-          │  │ svc-aks/prod/tf.state   │  │
-          │  │ svc-sql/dev/tf.state    │  │
-          │  └─────────────────────────┘  │
-          │  Locking: Built-in blob lease │
-          └───────────────────────────────┘
-```
+- Runs `terraform fmt`, `validate`, and `plan`
+- Gates `apply` and `destroy` with GitHub Environments
+- Supports one workflow per environment
 
-## Features
-
-- **One workflow to rule them all** — teams write ~30 lines of YAML per environment to get full CI/CD
-- **Client secret auth** — org-level secret, zero setup per new repo
-- **Separate pipeline per environment** — deploy and manage each environment independently
-- **Azure Blob Storage backend** — state + locking in a single resource (blob leases)
-- **Manual approval gates** — Apply and Destroy require reviewer approval via GitHub Environments
-- **Safe by default** — Apply and Destroy are skipped if no reviewers are configured
-- **PR comments** — plan output posted as a PR comment for review
-
-## Quick Start
-
-### 1. Use in Your Service Repo
-
-Create one workflow per environment. Example `.github/workflows/infra-dev.yml`:
+## Example Usage
 
 ```yaml
-name: "Infrastructure - Dev"
+name: Infrastructure - Dev
 
 on:
   push:
@@ -61,7 +21,7 @@ on:
 
 jobs:
   dev:
-    uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
+    uses: your-org/terraform-platform/.github/workflows/terraform.yml@main
     with:
       working_directory: ./infra/my-service
       environment: dev
@@ -70,23 +30,21 @@ jobs:
     secrets: inherit
 ```
 
-That's it. The workflow auto-derives:
-- **State key:** `my-project/my-service/dev/terraform.tfstate`
-- **Var file:** `-var-file=environments/dev.tfvars`
+Derived values:
+- State key in Blob storage: `my-project/my-service/dev/terraform.tfstate`
+- Var file: `environments/dev.tfvars`
 
-### 2. Add Terraform Code
+## Terraform Layout
 
-Organise your infra folder with modules and service folders:
-
-```
+```text
 infra/
-  modules/           # Reusable modules
+  modules/
     my-module/
       main.tf
       variables.tf
       outputs.tf
-  my-service/         # Service root (working_directory points here)
-    main.tf           # Calls modules, creates resources
+  my-service/
+    main.tf
     variables.tf
     outputs.tf
     provider.tf
@@ -97,11 +55,14 @@ infra/
       qa.tfvars
 ```
 
+`provider.tf` needs an empty `azurerm` backend block:
+
 ```hcl
-# infra/my-service/provider.tf
 terraform {
   required_version = ">= 1.9.0"
-  backend "azurerm" {}   # Configured automatically by the pipeline
+
+  backend "azurerm" {}
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -115,133 +76,39 @@ provider "azurerm" {
 }
 ```
 
-### 3. Push and Set Up Reviewers
-
-1. Push to `main` — the pipeline runs Format → Validate → Plan
-2. Go to **Settings → Environments** → create `dev` and `dev-destroy`
-3. Add **Required reviewers** to both environments
-4. Next push — Apply pauses with a "Review deployments" button
-
-## Pipeline Flow
-
-```
-On PR:
-  Format ──► Validate ──► Plan (posts comment to PR)
-
-On push to main:
-  Format ──► Validate ──► Plan ─┬──► Apply ⏸️  [Review deployments]
-                                └──► Destroy ⏸️ [Review deployments]
-```
-
-| Stage | Trigger | Details |
-|---|---|---|
-| **Format** | Auto | `terraform fmt -check -recursive -diff` |
-| **Validate** | Auto | `terraform init -backend=false` + `terraform validate` |
-| **Plan** | Auto | Full init, plan, artifact upload, env creation |
-| **Apply** | Manual approval | Downloads saved plan, `terraform apply -auto-approve tfplan` |
-| **Destroy** | Manual approval | `terraform plan -destroy` + `terraform destroy -auto-approve` |
-
 ## Workflow Inputs
 
-| Input | Required | Default | Description |
-|---|---|---|---|
-| `working_directory` | No | `.` | Path to Terraform root module |
-| `environment` | **Yes** | — | `dev`, `staging`, `prod` |
-| `project_name` | **Yes** | — | Project name — groups services in the state path |
-| `service_name` | No | Repo name | Service name within the project |
-| `terraform_version` | No | `1.9.0` | Terraform version |
-| `backend_resource_group` | No | `rg-terraform-state` | Resource group for state storage |
-| `backend_storage_account` | No | `stpixeltechstate` | Storage account name |
-| `backend_container` | No | `tfstate` | Blob container name |
-| `additional_args` | No | `""` | Extra Terraform CLI args (appended after `-var-file`) |
-
-### Auto-Derived Values
-
-From `project_name` + `service_name` (defaults to repo name) + `environment`:
-
-| What | Pattern | Example |
+| Input | Required | Default |
 |---|---|---|
-| State key | `<project_name>/<service_name>/<environment>/terraform.tfstate` | `storage/svc-blob-storage-example/dev/terraform.tfstate` |
-| Var file | `environments/<environment>.tfvars` | `environments/dev.tfvars` |
+| `working_directory` | No | `.` |
+| `environment` | Yes | — |
+| `project_name` | Yes | — |
+| `service_name` | No | Repo name |
+| `terraform_version` | No | `1.9.0` |
+| `additional_args` | No | `""` |
 
-## State File Convention
+## Notes
 
-```
-<project-name>/<service-name>/<environment>/terraform.tfstate
-```
+- `apply` and `destroy` require reviewers on matching GitHub Environments
+- `plan` uploads a saved plan artifact and comments on pull requests
+- Azure credentials can be passed with inherited GitHub secrets
 
-Examples:
-```
-storage/svc-blob-storage-example/dev/terraform.tfstate
-platform/aks-cluster/prod/terraform.tfstate
-data/sql-database/staging/terraform.tfstate
-```
+## Repo Layout
 
-## Authentication
-
-The workflow supports two authentication methods — auto-detected via the `ARM_CLIENT_SECRET` secret:
-
-| Method | When | Setup per new repo |
-|---|---|---|
-| **Client Secret** | `ARM_CLIENT_SECRET` is set | **None** — works immediately for all repos in the org |
-| **OIDC** | `ARM_CLIENT_SECRET` is empty | Requires federated credentials per repo/branch/environment |
-
-We use **client secret** (org-level secret) for simplicity — any new repo in the org works instantly with zero Azure setup.
-
-Org secrets:
-- `ARM_CLIENT_ID` — App registration client ID
-- `ARM_TENANT_ID` — Azure AD tenant ID
-- `ARM_SUBSCRIPTION_ID` — Target subscription
-- `ARM_CLIENT_SECRET` — Service principal client secret
-
-The service principal needs `Contributor` + `Storage Blob Data Contributor` roles at subscription level.
-
-> **Note:** To switch to OIDC (more secure, no secret rotation), remove `ARM_CLIENT_SECRET` and add federated credentials per repo. The workflow auto-detects.
-
-## Onboarding a New Service
-
-1. Create a new repo in the org
-2. Add `infra/modules/` with reusable modules and `infra/<service-name>/` with your Terraform code (`provider.tf` must have `backend "azurerm" {}`)
-3. Add one workflow per environment in `.github/workflows/` calling this reusable workflow (see Quick Start)
-4. Push to `main` — pipeline creates environments automatically
-5. Add reviewers to the environments
-6. Done — Apply and Destroy are gated by approval
-
-No Azure setup needed per repo — org secrets handle auth for all repos.
-
-## File Structure
-
-```
-PixelTech-Solutions/Terraform/
+```text
+.
 ├── .github/workflows/
-│   └── terraform.yml              # Reusable workflow (the platform)
+│   └── terraform.yml
 ├── examples/
-│   └── aks-service/               # Example consumer repo
+│   └── aks-service/
 │       ├── .github/workflows/
-│       │   ├── deploy.yml         # Dev pipeline
-│       │   ├── deploy-qa.yml      # QA pipeline
-│       │   ├── deploy-uat.yml     # UAT pipeline
-│       │   ├── deploy-prod.yml    # Prod pipeline
-│       │   └── deploy-demo.yml    # Demo pipeline
+│       │   ├── deploy.yml
+│       │   ├── deploy-demo.yml
+│       │   ├── deploy-qa.yml
+│       │   ├── deploy-uat.yml
+│       │   └── deploy-prod.yml
 │       └── infra/
-│           ├── modules/
-│           │   └── aks/
-│           │       ├── main.tf
-│           │       ├── variables.tf
-│           │       └── outputs.tf
-│           └── aks-cluster/           # Service folder
-│               ├── main.tf
-│               ├── variables.tf
-│               ├── outputs.tf
-│               ├── provider.tf
-│               ├── data.tf
-│               ├── locals.tf
-│               └── environments/
-│                   ├── dev.tfvars
-│                   ├── qa.tfvars
-│                   ├── uat.tfvars
-│                   ├── prod.tfvars
-│                   └── demo.tfvars
-├── .gitignore
+│           ├── modules/aks/
+│           └── aks-cluster/
 └── README.md
 ```

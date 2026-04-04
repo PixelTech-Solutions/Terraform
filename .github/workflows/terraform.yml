@@ -200,7 +200,6 @@ jobs:
 
   # ===========================================================================
   # Apply — PAUSES here with "Review deployments" button
-  # Environments are auto-created on first run. Add reviewers to enable gates.
   # ===========================================================================
   apply:
     name: "Apply (${{ inputs.environment }})"
@@ -237,7 +236,6 @@ jobs:
 
   # ===========================================================================
   # Destroy — PAUSES here with "Review deployments" button
-  # Environments are auto-created on first run. Add reviewers to enable gates.
   # ===========================================================================
   destroy:
     name: "Destroy (${{ inputs.environment }})"

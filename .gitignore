@@ -1,7 +1,4 @@
-### AL ###
-#Template for AL projects for Dynamics 365 Business Central
-
-# Internal documentation (not tracked in git)
+# Internal documentation
 SETUP_DOCUMENTATION.md
 
 #launch.json folder

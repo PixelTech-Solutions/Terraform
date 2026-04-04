@@ -1,9 +1,6 @@
 # =============================================================================
 # Example: AKS cluster — Dev environment
 # =============================================================================
-# State key auto-derived:  platform/aks-cluster/dev/terraform.tfstate
-# Var file auto-derived:   environments/dev.tfvars
-# =============================================================================
 
 name: "Deploy AKS - Dev"
 

@@ -84,6 +84,7 @@ env:
   TF_VAR_jwt_refresh_secret: ${{ secrets.TF_VAR_JWT_REFRESH_SECRET }}
   TF_VAR_stripe_secret_key: ${{ secrets.TF_VAR_STRIPE_SECRET_KEY }}
   TF_VAR_stripe_publishable_key: ${{ secrets.TF_VAR_STRIPE_PUBLISHABLE_KEY }}
+  TF_VAR_google_client_id: ${{ secrets.TF_VAR_GOOGLE_CLIENT_ID }}
   TF_INPUT: "false"
   TF_IN_AUTOMATION: "true"
 

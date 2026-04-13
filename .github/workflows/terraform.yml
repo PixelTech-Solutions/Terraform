@@ -79,6 +79,11 @@ env:
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
   SERVICE_NAME: ${{ inputs.service_name != '' && inputs.service_name || github.event.repository.name }}
   STATE_KEY: ${{ inputs.project_name }}/${{ inputs.service_name != '' && inputs.service_name || github.event.repository.name }}/${{ inputs.environment }}/terraform.tfstate
+  TF_VAR_postgresql_admin_password: ${{ secrets.TF_VAR_POSTGRESQL_ADMIN_PASSWORD }}
+  TF_VAR_jwt_secret: ${{ secrets.TF_VAR_JWT_SECRET }}
+  TF_VAR_jwt_refresh_secret: ${{ secrets.TF_VAR_JWT_REFRESH_SECRET }}
+  TF_VAR_stripe_secret_key: ${{ secrets.TF_VAR_STRIPE_SECRET_KEY }}
+  TF_VAR_stripe_publishable_key: ${{ secrets.TF_VAR_STRIPE_PUBLISHABLE_KEY }}
   TF_INPUT: "false"
   TF_IN_AUTOMATION: "true"
 

@@ -67,6 +67,12 @@ on:
         required: true
       ARM_CLIENT_SECRET:
         required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_REGION:
+        required: false
 
 permissions:
   contents: read
@@ -79,6 +85,10 @@ env:
   ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
   SERVICE_NAME: ${{ inputs.service_name != '' && inputs.service_name || github.event.repository.name }}
   STATE_KEY: ${{ inputs.project_name }}/${{ inputs.service_name != '' && inputs.service_name || github.event.repository.name }}/${{ inputs.environment }}/terraform.tfstate
+  # AWS (optional — only consumed if the Terraform code uses the aws provider)
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
   TF_VAR_postgresql_admin_password: ${{ secrets.TF_VAR_POSTGRESQL_ADMIN_PASSWORD }}
   TF_VAR_jwt_secret: ${{ secrets.TF_VAR_JWT_SECRET }}
   TF_VAR_jwt_refresh_secret: ${{ secrets.TF_VAR_JWT_REFRESH_SECRET }}

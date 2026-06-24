@@ -1,0 +1,24 @@
+# Deploy AWS EC2 — Dev environment
+name: "Deploy EC2 - Dev"
+
+on:
+  push:
+    branches: [main]
+    paths: ["infra/aws-ec2/**"]
+  pull_request:
+    paths: ["infra/aws-ec2/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dev:
+    uses: PixelTech-Solutions/Terraform/.github/workflows/terraform.yml@main
+    with:
+      working_directory: ./infra/aws-ec2
+      environment: dev
+      project_name: incident-commander
+      service_name: aws-ec2
+    secrets: inherit
